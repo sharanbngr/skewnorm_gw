@@ -19,7 +19,7 @@ import numpy as np
 
 
 # numpy, cupy or jax
-backend = ''
+backend = 'jax'
 
 
 if backend == 'numpy':
@@ -32,14 +32,10 @@ elif backend == 'jax':
     from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
     xp = jnp
 
-
 set_backend(backend=backend)
 
-mass_pdf = SinglePeakSmoothedMassDistribution()
-z_pdf = PowerLawRedshift()
-
-
-
+#mass_pdf = SinglePeakSmoothedMassDistribution()
+#z_pdf = PowerLawRedshift()
 
 
 
@@ -89,6 +85,14 @@ def skew_norm_prob(
          
 
 
+def get_model(models, backend):
+    if type(models) not in (list, tuple):
+        models = [models]
+    Model = NonCachingModel if backend == 'jax' else bilby.hyper.model.Model
+    return Model(
+        [model() if type(model) is type else model for model in models]
+    )
+
 
 
 
@@ -96,10 +100,10 @@ def skew_norm_prob(
 runargs = { 'pe_file':'/projects/p31963/sharan/pop/GW_PE_samples.h5',
     'inj_file':'/projects/p31963/sharan/pop/O3_injections.pkl',
     'chains':1, 'samples':7000, 'thinning':1, 'warmup':3000, 
-    'skip_inference':False, 'spin_model':'trunc_norm'}
+    'skip_inference':False, 'spin_model':'skew_norm'}
 
 #runargs['outdir'] = './trunc_norm_cuda'
-runargs['outdir'] = './' + runargs['spin_model'] + '_' + backend + '_inc_rate'
+runargs['outdir'] = './' + runargs['spin_model'] + '_' + backend + '_no_rate'
 
 # extract posterior
 post = dd.io.load(runargs['pe_file'])
@@ -119,12 +123,12 @@ posteriors = []
 
 for event in post.keys():
     posteriors.append(post[event])
-
+    
+#rate = LogUniform(minimum=1e-1, maximum=1e3, name='rate', latex_label='$R$')
 
 priors = PriorDict(
     dict(
-    kappa = Uniform(minimum=-6, maximum=6, name='kappa', latex_label='$\\kappa_z$'),
-    rate = LogUniform(minimum=1e-1, maximum=1e3, name='rate', latex_label='$R$'),
+    lamb = Uniform(minimum=-6, maximum=6, name='lamb', latex_label='$\\kappa_z$'),
     alpha = Uniform(minimum=-4, maximum=12, latex_label='$\\alpha$'),
     beta = Uniform(minimum=-4, maximum=12, name='beta', latex_label='$\\beta_{q}$'),
     mmax = Uniform(minimum=30, maximum=100, name='mmax', latex_label='$m_{\\max}$'),
@@ -133,23 +137,26 @@ priors = PriorDict(
     lam = Uniform(minimum=0, maximum=1, name='lam', latex_label='$\\lambda_{\\rm peak}$'),
     mpp = Uniform(minimum=20, maximum=50, name='mpp', latex_label='$\\mu_{\\rm peak}$'),
     sigpp = Uniform(minimum=1, maximum=10, name='sigpp', latex_label='$\\sigma_{\\rm peak}$'),
-    mu_x = Uniform(minimum=-1, maximum=1, name='mu_x', latex_label='$\\mu_{\\chi}$'),
-    log_sig_x = Uniform(minimum=-4, maximum=1.5, name='log_sig_x', latex_label='$\\log \\sigma_{\\chi}$'),
+    mu_chi_eff = Uniform(minimum=-1, maximum=1, name='mu_chi_eff', latex_label='$\\mu_{\\chi}$'),
+    sigma_chi_eff = LogUniform(minimum=0.01, maximum=4, name='sigma_chi_eff', latex_label='$\\log \\sigma_{\\chi}$'),
     ))
 
 
 
 if runargs['spin_model'] == 'skew_norm':
-    priors['eta_x']= bilby.prior.Uniform(minimum=-60, maximum=60, name='eta_x', latex_label='$\\eta_{\\chi}$')
-    spin_prob = skew_norm_prob
+    priors['eta_chi_eff']= bilby.prior.Uniform(minimum=-60, maximum=60, name='eta_chi_eff', latex_label='$\\eta_{\\chi}$')
+    models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift, skewnorm_chi_eff]
+    #spin_prob = skew_norm_prob
 elif runargs['spin_model'] == 'trunc_norm':
-    spin_prob = trun_norm_prob
+    models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift, gaussian_chi_eff]
+    #spin_prob = trun_norm_prob
 
+hyperprior = get_model(models, backend)
 
-VTs = ResamplingVT(spin_prob, injs, n_events=len(posteriors), 
+VTs = ResamplingVT(model=get_model(models, backend), data=injs, n_events=len(posteriors), 
                         marginalize_uncertainty=False, enforce_convergence=True)
 
-likelihood = RateLikelihood(posteriors = posteriors, hyper_prior = spin_prob, selection_function = VTs)
+likelihood = HyperparameterLikelihood(posteriors = posteriors, hyper_prior = get_model(models, backend), selection_function = VTs)
 
 
 if backend == 'jax':
@@ -165,16 +172,14 @@ result = bilby.run_sampler(likelihood = likelihood,
 spin_params = []
 
 if runargs['spin_model'] == 'trunc_norm':
-    spin_params.append("mu_x")
-    spin_params.append("log_sig_x")
-    #spin_params.append("mu_p")
-    #spin_params.append("sig_p")
+    spin_params.append("mu_chi_eff")
+    spin_params.append("sigma_chi_eff")
+
 elif runargs['spin_model'] == 'skew_norm':
-    spin_params.append("mu_x")
-    spin_params.append("log_sig_x")
-    spin_params.append("eta_x")
-    #spin_params.append("mu_p")
-    #spin_params.append("sig_p")
+    spin_params.append("mu_chi_eff")
+    spin_params.append("sigma_chi_eff")
+    spin_params.append("eta_chi_eff")
+
 
 
 
