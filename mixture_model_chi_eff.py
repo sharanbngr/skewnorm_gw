@@ -29,6 +29,16 @@ elif backend == 'jax':
 
 set_backend(backend=backend)
 
+def norm_mixture_model_chi_eff(dataset, mu_al, sigma_al, eta_al, lam_al, sigma_dy):
+
+    pdf = mixture_model_chi_eff(dataset, mu_al, sigma_al, eta_al, lam_al, sigma_dy)
+
+    # calc norm
+    chi_arr = {'chi_eff': xp.array([0.005 * i for i in range(-200, 201, 1)])}
+    norm = 0.005 * xp.sum(mixture_model_chi_eff(chi_arr, mu_al, sigma_al, eta_al, lam_al, sigma_dy))
+
+    return pdf/norm
+
 def mixture_model_chi_eff(dataset, mu_al, sigma_al, eta_al, lam_al, sigma_dy):
 
     '''
@@ -57,8 +67,8 @@ def mixture_model_chi_eff(dataset, mu_al, sigma_al, eta_al, lam_al, sigma_dy):
     '''
 
     # Should be normalized because gaussian_chi_eff and skewnorm_chi_eff already are
-    pdf = (1 - lam_al) * gaussian_chi_eff(dataset, mu=0, sigma=sigma_dy) +  \
-            lam_al * skewnorm_chi_eff(dataset, mu=mu_al, sigma=sigma_al, eta=eta_al)
+    pdf = (1 - lam_al) * gaussian_chi_eff(dataset, mu_chi_eff=0, sigma_chi_eff=sigma_dy) +  \
+            lam_al * skewnorm_chi_eff(dataset, mu_chi_eff=mu_al, sigma_chi_eff=sigma_al, eta_chi_eff=eta_al)
 
     return pdf
 
@@ -121,11 +131,11 @@ priors = PriorDict(
     mu_al = Uniform(minimum=0, maximum=1, name='mu_al', latex_label='$\\mu_{\\rm al}$'),
     sigma_al = LogUniform(minimum=0.01, maximum=4, name='sigma_al', latex_label='$\\sigma_{\\rm al}$'),
     eta_al = Uniform(minimum=-20, maximum=20, name='eta_al', latex_label='$\\eta_{\\rm al}$'),
-    lam_al = Uniform(minimum=0, maximum=1, name='lam_al', latex_label='$\\lam_{\\rm al}$'),
+    lam_al = Uniform(minimum=0, maximum=1, name='lam_al', latex_label='$lam_{\\rm al}$'),
     sigma_dy = LogUniform(minimum=0.01, maximum=4, name='sigma_dy', latex_label='$\\sigma_{\\rm dy}$'),
     ))
 
-models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift, mixture_model_chi_eff]
+models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift, norm_mixture_model_chi_eff]
 
 hyperprior = get_model(models, backend)
 
@@ -145,19 +155,7 @@ result = bilby.run_sampler(likelihood = likelihood,
                   label = 'GWTC-3',  
                   outdir = runargs['outdir'])
 
-spin_params = []
-
-if runargs['spin_model'] == 'trunc_norm':
-    spin_params.append("mu_chi_eff")
-    spin_params.append("sigma_chi_eff")
-
-elif runargs['spin_model'] == 'skew_norm':
-    spin_params.append("mu_chi_eff")
-    spin_params.append("sigma_chi_eff")
-    spin_params.append("eta_chi_eff")
-
-
-
+spin_params = ['mu_al', 'sigma_al', 'eta_al', 'lam_al', 'sigma_dy']
 
 # plot corner plot
 result.plot_corner(save=True)
