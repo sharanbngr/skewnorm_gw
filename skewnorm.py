@@ -1,7 +1,7 @@
-import sys
+import sys, os
 from gwpopulation.models.mass import SinglePeakSmoothedMassDistribution
 from gwpopulation.models.redshift import PowerLawRedshift
-from gwpopulation.models.spin import gaussian_chi_eff, skewnorm_chi_eff, gaussian_chi_p
+from gwpopulation.models.spin import gaussian_chi_eff, skewnorm_chi_eff, gaussian_chi_p, eps_skewnorm_chi_eff
 from gwpopulation.hyperpe import HyperparameterLikelihood, RateLikelihood
 from gwpopulation.vt import ResamplingVT
 import deepdish as dd
@@ -10,26 +10,9 @@ import bilby
 from bilby.core.prior import PriorDict, Uniform, LogUniform
 from gwpopulation.backend import set_backend
 import numpy as np
+from configparser import ConfigParser
+from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
 
-
-# numpy, cupy or jax
-backend = 'jax'
-
-
-if backend == 'numpy':
-    xp = np
-elif backend == 'cupy':
-    import cupy
-    xp = cupy
-elif backend == 'jax':
-    import jax.numpy as jnp
-    from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
-    xp = jnp
-
-set_backend(backend=backend)
-
-#mass_pdf = SinglePeakSmoothedMassDistribution()
-#z_pdf = PowerLawRedshift()
 
 
 
@@ -45,16 +28,26 @@ def get_model(models, backend):
 
 def spinfit(runargs):
 
-    runargs = { 'pe_file':'/projects/p31963/sharan/pop/GW_PE_samples.h5',
-        'inj_file':'/projects/p31963/sharan/pop/O3_injections.pkl',
-        'chains':1, 'samples':7000, 'thinning':1, 'warmup':3000, 
-        'skip_inference':False, 'spin_model':'trunc_norm', 'fit_chip':True}
+    if runargs['backend'] == 'numpy':
+        xp = np
+    elif runargs['backend'] == 'cupy':
+        import cupy
+        xp = cupy
+    elif runargs['backend'] == 'jax':
+        import jax.numpy as jnp
+        xp = jnp
 
-    #runargs['outdir'] = './trunc_norm_cuda'
-    runargs['outdir'] = './' + runargs['spin_model'] + '_' + backend + '_no_rate'
+    set_backend(backend=runargs['backend'])
 
-    if runargs['fit_chip']:
-        runargs['outdir'] = runargs['outdir'] + '_fit_chip'
+    runargs['outdir'] = './' + runargs['spin_model'] + '_' + runargs['backend'] + '_' + runargs['rundix']
+
+
+    # create directory and copy the config file
+    os.system('mkdir -p ' + runargs['outdir'])
+    os.system('cp '  + runargs['configfile']  + ' ' + runargs['outdir'] + '/config.ini')
+
+
+
     # extract posterior
     post = dd.io.load(runargs['pe_file'])
 
@@ -76,9 +69,6 @@ def spinfit(runargs):
     with open(runargs['inj_file'], 'rb') as f:
         injs = pickle.load(f)
 
-        #### need to calc chi_eff for injs
-        injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
-
 
     for key in injs.keys():
         injs[key] = xp.array(injs[key])
@@ -92,68 +82,67 @@ def spinfit(runargs):
     injs['chi_p'] = np.maximum(injs['a_1']*sin_tilt_1, 
                                         mass_factor*injs['mass_ratio']*injs['a_2']*sin_tilt_2)
 
-    #rate = LogUniform(minimum=1e-1, maximum=1e3, name='rate', latex_label='$R$')
 
-    priors = PriorDict(
-        dict(
-        lamb = Uniform(minimum=-6, maximum=6, name='lamb', latex_label='$\\kappa_z$'),
-        alpha = Uniform(minimum=-4, maximum=12, latex_label='$\\alpha$'),
-        beta = Uniform(minimum=-4, maximum=12, name='beta', latex_label='$\\beta_{q}$'),
-        mmax = Uniform(minimum=30, maximum=100, name='mmax', latex_label='$m_{\\max}$'),
-        mmin = Uniform(minimum=2, maximum=10, name='mmin', latex_label='$m_{\\min}$'),
-        delta_m = Uniform(minimum=0.01, maximum=10, name='delta_m', latex_label='$\\delta_{m}$'),
-        lam = Uniform(minimum=0, maximum=1, name='lam', latex_label='$\\lambda_{\\rm peak}$'),
-        mpp = Uniform(minimum=20, maximum=50, name='mpp', latex_label='$\\mu_{\\rm peak}$'),
-        sigpp = Uniform(minimum=1, maximum=10, name='sigpp', latex_label='$\\sigma_{\\rm peak}$'),
-        mu_chi_eff = Uniform(minimum=-1, maximum=1, name='mu_chi_eff', latex_label='$\\mu_{\\rm eff}$'),
-        sigma_chi_eff = LogUniform(minimum=0.01, maximum=4, name='sigma_chi_eff', latex_label='$\\sigma_{\\rm eff}$'),
-        ))
+    priors = PriorDict(filename=runargs['priors'])
 
+    models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift]
 
-
-    if runargs['spin_model'] == 'skew_norm':
-        priors['eta_chi_eff']= bilby.prior.Uniform(minimum=-50, maximum=50, name='eta_chi_eff', latex_label='$\\eta_{\\rm eff}$')
-        models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift, skewnorm_chi_eff]
-        #spin_prob = skew_norm_prob
-    elif runargs['spin_model'] == 'trunc_norm':
-        models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift, gaussian_chi_eff]
-        #spin_prob = trun_norm_prob
+    if runargs['spin_model'] == 'skewnorm':
+        models.append(skewnorm_chi_eff)
+    elif runargs['spin_model'] == 'truncnorm':
+        models.append(gaussian_chi_eff)
+    elif runargs['spin_model'] == 'eps_skewnorm':
+        models.append(eps_skewnorm_chi_eff)
 
     if runargs['fit_chip']:
         models.append(gaussian_chi_p)
-        priors['mu_chi_p'] = bilby.prior.Uniform(minimum=0.01, maximum=1.0, name='mu_chi_p', latex_label='$\\mu_{\\rm p}$')
-        priors['sigma_chi_p'] = bilby.prior.LogUniform(minimum=0.01, maximum=1.0, name='sigma_chi_p', latex_label='$\\sigma_{\\rm p}$')
+    else:
+        priors.pop('mu_chi_p')
+        priors.pop('sigma_chi_p')
+
+    if runargs['fit_rate']:
+        hyperlikelihood = RateLikelihood
+    else:
+        hyperlikelihood = HyperparameterLikelihood
+        priors.pop('rate')
+
+    VTs = ResamplingVT(model=get_model(models, 
+                                       runargs['backend']), 
+                                       data=injs,
+                                         n_events=len(posteriors), 
+                            marginalize_uncertainty=False, 
+                            enforce_convergence=True)
+
+    likelihood = hyperlikelihood(posteriors = posteriors, 
+                                 hyper_prior = get_model(models, runargs['backend']), 
+                                 selection_function = VTs)
 
 
-
-    hyperprior = get_model(models, backend)
-
-    VTs = ResamplingVT(model=get_model(models, backend), data=injs, n_events=len(posteriors), 
-                            marginalize_uncertainty=False, enforce_convergence=True)
-
-    likelihood = HyperparameterLikelihood(posteriors = posteriors, hyper_prior = get_model(models, backend), selection_function = VTs)
-
-
-    if backend == 'jax':
+    if runargs['backend'] == 'jax':
         likelihood = JittedLikelihood(likelihood)
 
 
     result = bilby.run_sampler(likelihood = likelihood, 
-                    nlive=500, resume=True,
+                    nlive=runargs['nlive'], resume=True,
                     priors = priors, 
                     label = 'GWTC-3',  
+                    check_point_delta_t = 300,
                     outdir = runargs['outdir'])
 
     spin_params = []
 
-    if runargs['spin_model'] == 'trunc_norm':
+    if runargs['spin_model'] == 'truncnorm':
         spin_params.append("mu_chi_eff")
         spin_params.append("sigma_chi_eff")
 
-    elif runargs['spin_model'] == 'skew_norm':
+    elif runargs['spin_model'] == 'skewnorm':
         spin_params.append("mu_chi_eff")
         spin_params.append("sigma_chi_eff")
         spin_params.append("eta_chi_eff")
+    elif runargs['spin_model'] == 'eps_skewnorm':
+        spin_params.append("mu_chi_eff")
+        spin_params.append("sigma_chi_eff")
+        spin_params.append("eps_chi_eff")
 
 
     if runargs['fit_chip']:
@@ -173,5 +162,29 @@ def spinfit(runargs):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
             raise ValueError('Provide the config file as an argument')
-    else:
-        spinfit(sys.argv[1])
+    else:   
+
+
+        config = ConfigParser()
+        config.read(sys.argv[1])
+
+        runargs = {}
+
+        # collate args
+        runargs['doMixture'] = bool(int(config.get('model', 'doMixture')))
+        runargs['spin_model'] = config.get('model', 'spin_model')
+        runargs['priors'] = config.get('model', 'priors')
+        runargs['skewness_prior'] = config.get('model', 'skewness_prior')
+        runargs['doqBinning'] = bool(int(config.get('model', 'doqBinning')))
+        runargs['fit_chip'] = bool(int(config.get('model', 'fit_chip')))
+        runargs['fit_rate'] = bool(int(config.get('model', 'fit_rate')))
+        runargs['backend'] = config.get('params', 'backend')
+
+        runargs['pe_file'] = config.get('params', 'pe_file')
+        runargs['inj_file'] = config.get('params', 'inj_file')
+        runargs['nlive'] = int(config.get('params', 'nlive'))
+        runargs['dlogz'] = float(config.get('params', 'dlogz'))
+        runargs['rundix'] = config.get('params', 'rundix')
+        runargs['configfile'] = sys.argv[1] 
+
+        spinfit(runargs)
