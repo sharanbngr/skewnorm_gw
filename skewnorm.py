@@ -12,7 +12,8 @@ from gwpopulation.backend import set_backend
 import numpy as np
 from configparser import ConfigParser
 from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
-
+from prior_conversions import chi_effective_prior_from_isotropic_spins as chi12_to_chieff
+from prior_conversions import chi_p_prior_from_isotropic_spins as chi12_to_chip
 
 
 
@@ -23,6 +24,8 @@ def get_model(models, backend):
     return Model(
         [model() if type(model) is type else model for model in models]
     )
+
+
 
 
 
@@ -53,36 +56,55 @@ def spinfit(runargs):
 
     posteriors = []
 
-    for event in post.keys():
-
-        sin_tilt_1, sin_tilt_2 = np.sqrt(1 - post[event]['cos_tilt_1']**2), np.sqrt(1 - post[event]['cos_tilt_2']**2)
-        mass_factor = (4*post[event]['mass_ratio'] + 3) / (4 + 3*post[event]['mass_ratio'])
-
-        # np.maximum calculates element-wise maxima
-        post[event]['chi_p'] = np.maximum(post[event]['a_1']*sin_tilt_1, 
-                                                mass_factor * post[event]['mass_ratio']*post[event]['a_2']*sin_tilt_2)
+    ## do prior conversions
+    if runargs['fit_chip']:
         
-        posteriors.append(post[event])
+        print('converting PE priors to chi_eff, chi_p ...')
+        for event in post.keys():
+            sin_tilt_1, sin_tilt_2 = np.sqrt(1 - post[event]['cos_tilt_1']**2), np.sqrt(1 - post[event]['cos_tilt_2']**2)
+            mass_factor = (4*post[event]['mass_ratio'] + 3) / (4 + 3*post[event]['mass_ratio'])
 
+            # np.maximum calculates element-wise maxima
+            post[event]['chi_p'] = np.maximum(post[event]['a_1']*sin_tilt_1, 
+                                                    mass_factor * post[event]['mass_ratio']*post[event]['a_2']*sin_tilt_2)
+
+            post[event]['prior']  *= 4.0 * chi12_to_chieff(post[event]['mass_ratio'], 1.0, post[event]['chi_eff'])                                         
+            post[event]['prior'] *= chi12_to_chip(post[event]['mass_ratio'], 1.0, post[event]['chi_p'])
+
+            posteriors.append(post[event])
+
+    else:
+        print('converting PE priors to chi_eff ...')
+        for event in post.keys():
+            post[event]['prior']  *= 4.0 * chi12_to_chieff(post[event]['mass_ratio'], 1.0, post[event]['chi_eff']) 
+            posteriors.append(post[event])
+
+        
 
     # get injections
     with open(runargs['inj_file'], 'rb') as f:
         injs = pickle.load(f)
 
-
     for key in injs.keys():
         injs[key] = xp.array(injs[key])
 
+    if runargs['fit_chip']:
+        print('converting inj priors to chi_eff, chi_p ...')
+        injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
+        sin_tilt_1, sin_tilt_2 = np.sqrt(1 - injs['cos_tilt_1']**2), np.sqrt(1 - injs['cos_tilt_2']**2)
+        mass_factor = (4*injs['mass_ratio'] + 3) / (4 + 3*injs['mass_ratio'])
 
-    injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
-
-    sin_tilt_1, sin_tilt_2 = np.sqrt(1 - injs['cos_tilt_1']**2), np.sqrt(1 - injs['cos_tilt_2']**2)
-    mass_factor = (4*injs['mass_ratio'] + 3) / (4 + 3*injs['mass_ratio'])
-
-    injs['chi_p'] = np.maximum(injs['a_1']*sin_tilt_1, 
-                                        mass_factor*injs['mass_ratio']*injs['a_2']*sin_tilt_2)
-
-
+        injs['chi_p'] = np.maximum(injs['a_1']*sin_tilt_1, 
+                                        mass_factor*injs['mass_ratio']*injs['a_2']*sin_tilt_2)        
+        
+        injs['prior'] *= 4.0 * chi12_to_chieff(injs['mass_ratio'], 1.0, injs['chi_eff'])   
+        injs['prior'] *= chi12_to_chip(injs['mass_ratio'], 1.0, injs['chi_p'])
+    
+    else:
+        print('converting inj priors to chi_eff ...')
+        injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
+        injs['prior'] *= 4.0 * chi12_to_chieff(injs['mass_ratio'], 1.0, injs['chi_eff'])    
+        
     priors = PriorDict(filename=runargs['priors'])
 
     models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift]
@@ -119,15 +141,23 @@ def spinfit(runargs):
 
 
     if runargs['backend'] == 'jax':
-        likelihood = JittedLikelihood(likelihood)
+        jit_likelihood = JittedLikelihood(likelihood)
 
 
-    result = bilby.run_sampler(likelihood = likelihood, 
+    result = bilby.run_sampler(likelihood = jit_likelihood, 
                     nlive=runargs['nlive'], resume=True,
                     priors = priors, 
                     label = 'GWTC-3',  
                     check_point_delta_t = 300,
                     outdir = runargs['outdir'])
+
+    ## calculate rates in post-processing
+    rates = list()
+    for ii in range(len(result.posterior)):
+        likelihood.parameters.update(dict(result.posterior.iloc[ii]))
+        rates.append(float(likelihood.generate_rate_posterior_sample()))
+    result.posterior["rate"] = rates
+    result.save_to_file(overwrite=True, extension='json')
 
     spin_params = []
 
