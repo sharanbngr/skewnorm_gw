@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.stats import gaussian_kde
 from scipy.special import spence as PL
+import deepdish as dd
+import pickle 
 
 
 
@@ -212,13 +214,13 @@ def chi_p_prior_from_isotropic_spins(q,aMax,xs):
 
     return pdfs
 
-def joint_prior_from_isotropic_spins(q,aMax,xeffs,xps,ndraws=10000,bw_method='scott'):
+def joint_prior_from_isotropic_spins(mratio,aMax,xeffs,xps,ndraws=10000,bw_method='scott'):
 
     """
     Function to calculate the conditional priors p(xp|xeff,q) on a set of {xp,xeff,q} posterior samples.
 
     INPUTS
-    q: Mass ratio
+    qs: Mass ratio
     aMax: Maximimum spin magnitude considered
     xeffs: Effective inspiral spin samples
     xps: Effective precessing spin values
@@ -231,10 +233,11 @@ def joint_prior_from_isotropic_spins(q,aMax,xeffs,xps,ndraws=10000,bw_method='sc
     # Convert to arrays for safety
     xeffs = np.reshape(xeffs,-1)
     xps = np.reshape(xps,-1)
-    
+    mratio = np.reshape(mratio, -1)
     # Compute marginal prior on xeff, conditional prior on xp, and multiply to get joint prior!
-    p_chi_eff = chi_effective_prior_from_isotropic_spins(q,aMax,xeffs)
-    p_chi_p_given_chi_eff = np.array([chi_p_prior_given_chi_eff_q(q,aMax,xeffs[i],xps[i],ndraws,bw_method) for i in range(len(xeffs))])
+    p_chi_eff = chi_effective_prior_from_isotropic_spins(mratio, aMax, xeffs)
+    p_chi_p_given_chi_eff = np.array([chi_p_prior_given_chi_eff_q(mratio[i], aMax, xeffs[i], xps[i], ndraws,bw_method) for i in range(len(xeffs))])
+
     joint_p_chi_p_chi_eff = p_chi_eff*p_chi_p_given_chi_eff
 
     return joint_p_chi_p_chi_eff
@@ -323,3 +326,62 @@ def chi_p_from_components(a1,a2,cost1,cost2,q):
     sint2 = np.sqrt(1.-cost2**2)
     
     return np.maximum(a1*sint1,((3.+4.*q)/(4.+3.*q))*q*a2*sint2)
+
+
+
+def convert_priors(pe_file='/projects/p31963/sharan/pop/GW_PE_samples.h5', 
+                   inj_file='/projects/p31963/sharan/pop/O3_injections.pkl'):
+    
+
+
+
+    with open(inj_file, 'rb') as f:
+        injs = pickle.load(f)
+
+    print('converting inj priors to chi_eff, chi_p ...')
+
+    injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
+    injs['chi_p'] = chi_p_from_components(injs['a_1'], injs['a_2'], injs['cos_tilt_1'], injs['cos_tilt_2'], injs['mass_ratio'])
+
+
+    injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'])  
+    injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p'])
+
+
+    with open('/projects/p31963/sharan/pop/o1o2o3_injections_prior_calculated.pkl', 'wb') as file:
+        pickle.dump(injs, file)
+
+
+
+
+    post = dd.io.load(pe_file)
+
+    print('converting PE priors to chi_eff, chi_p ...')
+    for event in post.keys():
+
+            print('converting for event ' + event + ' ...')
+            post[event]['chi_p'] = chi_p_from_components(post[event]['a_1'],
+                                                         post[event]['a_2'], 
+                                                         post[event]['cos_tilt_1'], 
+                                                         post[event]['cos_tilt_2'], 
+                                                         post[event]['mass_ratio'])
+            
+
+            post[event]['chieff_chip_prior'] = joint_prior_from_isotropic_spins(post[event]['mass_ratio'], 1.0, 
+                                                                           post[event]['chi_eff'], 
+                                                                           post[event]['chi_p'])  
+
+
+            post[event]['chieff_prior']  = chi_effective_prior_from_isotropic_spins(post[event]['mass_ratio'], 
+                                                                                    1.0, post[event]['chi_eff']) 
+            
+
+    dd.io.save('/projects/p31963/sharan/pop/o1o2o3_pe_prior_calculated.h5', post)
+
+
+    return 
+
+if __name__ == "__main__":
+    convert_priors()
+
+
