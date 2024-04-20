@@ -2,7 +2,7 @@ import numpy as np
 from scipy.stats import gaussian_kde
 from scipy.special import spence as PL
 import deepdish as dd
-import pickle 
+import pickle
 
 
 
@@ -209,7 +209,7 @@ def chi_p_prior_from_isotropic_spins(q,aMax,xs):
                         + x_A*np.arccos((4.+3.*qA)*x_A/((3.+4.*qA)*aMax*qA))
                         )
                     )
-                    
+
     pdfs[caseB] = (1./aMax)*np.arccos(x_B/aMax)
 
     return pdfs
@@ -270,17 +270,17 @@ def chi_p_prior_given_chi_eff_q(q,aMax,xeff,xp,ndraws=10000,bw_method='scott'):
 
     # Finally, given our conditional value for chi_eff, we can solve for cost1
     # Note, though, that we still must require that the implied value of cost1 be *physical*
-    cost1 = (xeff*(1.+q) - q*a2*cost2)/a1  
+    cost1 = (xeff*(1.+q) - q*a2*cost2)/a1
 
     # While any cost1 values remain unphysical, redraw a1, a2, and cost2, and recompute
     # Repeat as necessary
-    while np.any(cost1<-1) or np.any(cost1>1):   
-        to_replace = np.where((cost1<-1) | (cost1>1))[0]   
+    while np.any(cost1<-1) or np.any(cost1>1):
+        to_replace = np.where((cost1<-1) | (cost1>1))[0]
         a1[to_replace] = np.random.random(to_replace.size)*aMax
         a2[to_replace] = np.random.random(to_replace.size)*aMax
-        cost2[to_replace] = 2.*np.random.random(to_replace.size)-1.    
-        cost1 = (xeff*(1.+q) - q*a2*cost2)/a1   
-            
+        cost2[to_replace] = 2.*np.random.random(to_replace.size)-1.
+        cost1 = (xeff*(1.+q) - q*a2*cost2)/a1
+
     # Compute precessing spins and corresponding weights, build KDE
     # See `Joint-ChiEff-ChiP-Prior.ipynb` for a discussion of these weights
     Xp_draws = chi_p_from_components(a1,a2,cost1,cost2,q)
@@ -324,14 +324,14 @@ def chi_p_from_components(a1,a2,cost1,cost2,q):
 
     sint1 = np.sqrt(1.-cost1**2)
     sint2 = np.sqrt(1.-cost2**2)
-    
+
     return np.maximum(a1*sint1,((3.+4.*q)/(4.+3.*q))*q*a2*sint2)
 
 
 
-def convert_priors(pe_file='./GW_PE_samples.h5', 
+def convert_priors(pe_file='./GW_PE_samples.h5',
                    inj_file='./O3_injections.pkl'):
-    
+
 
 
 
@@ -344,11 +344,16 @@ def convert_priors(pe_file='./GW_PE_samples.h5',
     injs['chi_p'] = chi_p_from_components(injs['a_1'], injs['a_2'], injs['cos_tilt_1'], injs['cos_tilt_2'], injs['mass_ratio'])
 
 
-    injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
-    injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
+    injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'])
+    injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p'])
 
 
-    with open('/projects/p31963/sharan/pop/o1o2o3_injections_prior_calculated.pkl', 'wb') as file:
+
+    #injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
+    #injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
+
+
+    with open('/projects/p31963/sharan/pop/skewnorm_gw/tools/o1o2o3_injections_prior_calculated.pkl', 'wb') as file:
         pickle.dump(injs, file)
 
 
@@ -361,27 +366,27 @@ def convert_priors(pe_file='./GW_PE_samples.h5',
 
             print('converting for event ' + event + ' ...')
             post[event]['chi_p'] = chi_p_from_components(post[event]['a_1'],
-                                                         post[event]['a_2'], 
-                                                         post[event]['cos_tilt_1'], 
-                                                         post[event]['cos_tilt_2'], 
+                                                         post[event]['a_2'],
+                                                         post[event]['cos_tilt_1'],
+                                                         post[event]['cos_tilt_2'],
                                                          post[event]['mass_ratio'])
-            
-
-            post[event]['chieff_chip_prior'] = joint_prior_from_isotropic_spins(post[event]['mass_ratio'], 1.0, 
-                                                                           post[event]['chi_eff'], 
-                                                                           post[event]['chi_p'])  
 
 
-            post[event]['chieff_prior']  = chi_effective_prior_from_isotropic_spins(post[event]['mass_ratio'], 
-                                                                                    1.0, post[event]['chi_eff']) 
-            
+            post[event]['chieff_chip_prior'] = joint_prior_from_isotropic_spins(post[event]['mass_ratio'], 1.0,
+                                                                           post[event]['chi_eff'],
+                                                                           post[event]['chi_p'])
+
+
+            post[event]['chieff_prior']  = chi_effective_prior_from_isotropic_spins(post[event]['mass_ratio'],
+                                                                                    1.0, post[event]['chi_eff'])
+
     with open('./o1o2o3_pe_prior_calculated.pkl', 'wb') as file:
         pickle.dump(post, file)
 
     #dd.io.save('/projects/p31963/sharan/pop/o1o2o3_pe_prior_calculated.h5', post)
 
 
-    return 
+    return
 
 if __name__ == "__main__":
     convert_priors()

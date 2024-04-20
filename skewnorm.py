@@ -30,9 +30,9 @@ def skewnorm_mixture_model(dataset, mu_al, sigma_al, eta_al, lam_al, sigma_dy):
     Parameters
     ----------
     dataset: dict
-        Input data, must contain `chi_eff` 
+        Input data, must contain `chi_eff`
     mu_al: float
-        Mean parameter of the aligned population 
+        Mean parameter of the aligned population
     sigma_al: float
         Scale parameter of the aligned population
     eta_al: float
@@ -63,9 +63,9 @@ def eps_skewnorm_mixture_model(dataset, mu_al, sigma_al, eps_al, lam_al, sigma_d
     Parameters
     ----------
     dataset: dict
-        Input data, must contain `chi_eff` 
+        Input data, must contain `chi_eff`
     mu_al: float
-        Mean parameter of the aligned population 
+        Mean parameter of the aligned population
     sigma_al: float
         Scale parameter of the aligned population
     eta_al: float
@@ -89,25 +89,25 @@ def eps_skewnorm_mixture_model(dataset, mu_al, sigma_al, eps_al, lam_al, sigma_d
     return pdf
 
 
-def q_binning_skewnorm(dataset, 
-                       mu1, sigma1, eta1, 
+def q_binning_skewnorm(dataset,
+                       mu1, sigma1, eta1,
                        mu2, sigma2, eta2):
 
 
-    pdf = xp.where(dataset['mass_ratio'] >= 0.8,   
-                   skewnorm_chi_eff(dataset, mu_chi_eff=mu1, sigma_chi_eff=sigma1, eta_chi_eff=eta1), 
+    pdf = xp.where(dataset['mass_ratio'] >= 0.8,
+                   skewnorm_chi_eff(dataset, mu_chi_eff=mu1, sigma_chi_eff=sigma1, eta_chi_eff=eta1),
                    skewnorm_chi_eff(dataset, mu_chi_eff=mu2, sigma_chi_eff=sigma2, eta_chi_eff=eta2),)
 
     return pdf
 
 
-def q_binning_eps_skewnorm(dataset, 
-                       mu1, sigma1, eps1, 
+def q_binning_eps_skewnorm(dataset,
+                       mu1, sigma1, eps1,
                        mu2, sigma2, eps2):
 
 
-    pdf = xp.where(dataset['mass_ratio'] >= 0.8,   
-                   eps_skewnorm_chi_eff(dataset, mu_chi_eff=mu1, sigma_chi_eff=sigma1, eps_chi_eff=eps1), 
+    pdf = xp.where(dataset['mass_ratio'] >= 0.8,
+                   eps_skewnorm_chi_eff(dataset, mu_chi_eff=mu1, sigma_chi_eff=sigma1, eps_chi_eff=eps1),
                    eps_skewnorm_chi_eff(dataset, mu_chi_eff=mu2, sigma_chi_eff=sigma2, eps_chi_eff=eps2),)
 
     return pdf
@@ -152,10 +152,10 @@ def spinfit(runargs):
 
     ## do prior conversions
     if runargs['fit_chip']:
-        
+
         print('converting PE priors to chi_eff, chi_p ...')
         for event in post.keys():
-            
+
             post[event]['prior'] *= 4.0 * post[event]['chieff_chip_prior']
 
             posteriors.append(post[event])
@@ -170,12 +170,12 @@ def spinfit(runargs):
 
     if runargs['fit_chip']:
         print('converting inj priors to chi_eff, chi_p ...')
-        injs['prior'] *= 4 * injs['chieff_chip_prior']
-        
+        injs['prior'] *= 4*injs['chieff_chip_prior']
+
     else:
         print('converting inj priors to chi_eff ...')
-        injs['prior'] *= 4.0 * injs['chieff_prior']
- 
+        injs['prior'] *= 4*injs['chieff_prior']
+
 
     priors = PriorDict(filename=runargs['priors'])
 
@@ -235,15 +235,15 @@ def spinfit(runargs):
         hyperlikelihood = HyperparameterLikelihood
         priors.pop('rate')
 
-    VTs = ResamplingVT(model=get_model(models, 
-                                       runargs['backend']), 
+    VTs = ResamplingVT(model=get_model(models,
+                                       runargs['backend']),
                                        data=injs,
-                                         n_events=len(posteriors), 
-                            marginalize_uncertainty=False, 
+                                         n_events=len(posteriors),
+                            marginalize_uncertainty=False,
                             enforce_convergence=True)
 
-    likelihood = hyperlikelihood(posteriors = posteriors, 
-                                 hyper_prior = get_model(models, runargs['backend']), 
+    likelihood = hyperlikelihood(posteriors = posteriors,
+                                 hyper_prior = get_model(models, runargs['backend']),
                                  selection_function = VTs)
 
 
@@ -251,10 +251,10 @@ def spinfit(runargs):
         jit_likelihood = JittedLikelihood(likelihood)
 
 
-    result = bilby.run_sampler(likelihood = jit_likelihood, 
+    result = bilby.run_sampler(likelihood = jit_likelihood,
                     nlive=runargs['nlive'], resume=True,
-                    priors = priors, 
-                    label = 'GWTC-3',  
+                    priors = priors,
+                    label = 'GWTC-3',
                     check_point_delta_t = 300,
                     outdir = runargs['outdir'])
 
@@ -307,7 +307,7 @@ def spinfit(runargs):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
             raise ValueError('Provide the config file as an argument')
-    else:   
+    else:
 
 
         config = ConfigParser()
@@ -332,6 +332,6 @@ if __name__ == "__main__":
         runargs['nlive'] = int(config.get('params', 'nlive'))
         runargs['dlogz'] = float(config.get('params', 'dlogz'))
         runargs['rundix'] = config.get('params', 'rundix')
-        runargs['configfile'] = sys.argv[1] 
+        runargs['configfile'] = sys.argv[1]
 
         spinfit(runargs)
