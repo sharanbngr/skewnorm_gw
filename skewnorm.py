@@ -4,7 +4,6 @@ from gwpopulation.models.redshift import PowerLawRedshift
 from gwpopulation.models.spin import gaussian_chi_eff, skewnorm_chi_eff, gaussian_chi_p, eps_skewnorm_chi_eff
 from gwpopulation.hyperpe import HyperparameterLikelihood, RateLikelihood
 from gwpopulation.vt import ResamplingVT
-import deepdish as dd
 import pickle, json
 import bilby
 from bilby.core.prior import PriorDict
@@ -138,7 +137,9 @@ def spinfit(runargs):
 
 
     # extract posterior
-    post = dd.io.load(runargs['pe_file'])
+    with open(runargs['pe_file'], 'rb') as f:
+        post = pickle.load(f)
+    #post = dd.io.load(runargs['pe_file'])
 
     # get injections
     with open(runargs['inj_file'], 'rb') as f:

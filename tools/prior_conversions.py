@@ -329,8 +329,8 @@ def chi_p_from_components(a1,a2,cost1,cost2,q):
 
 
 
-def convert_priors(pe_file='/projects/p31963/sharan/pop/GW_PE_samples.h5', 
-                   inj_file='/projects/p31963/sharan/pop/O3_injections.pkl'):
+def convert_priors(pe_file='./GW_PE_samples.h5', 
+                   inj_file='./O3_injections.pkl'):
     
 
 
@@ -338,14 +338,14 @@ def convert_priors(pe_file='/projects/p31963/sharan/pop/GW_PE_samples.h5',
     with open(inj_file, 'rb') as f:
         injs = pickle.load(f)
 
-    print('converting inj priors to chi_eff, chi_p ...')
+    print('calculating inj priors to chi_eff, chi_p ...')
 
     injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
     injs['chi_p'] = chi_p_from_components(injs['a_1'], injs['a_2'], injs['cos_tilt_1'], injs['cos_tilt_2'], injs['mass_ratio'])
 
 
-    injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'])  
-    injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p'])
+    injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
+    injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
 
 
     with open('/projects/p31963/sharan/pop/o1o2o3_injections_prior_calculated.pkl', 'wb') as file:
@@ -356,7 +356,7 @@ def convert_priors(pe_file='/projects/p31963/sharan/pop/GW_PE_samples.h5',
 
     post = dd.io.load(pe_file)
 
-    print('converting PE priors to chi_eff, chi_p ...')
+    print('calculating PE priors to chi_eff, chi_p ...')
     for event in post.keys():
 
             print('converting for event ' + event + ' ...')
@@ -375,8 +375,10 @@ def convert_priors(pe_file='/projects/p31963/sharan/pop/GW_PE_samples.h5',
             post[event]['chieff_prior']  = chi_effective_prior_from_isotropic_spins(post[event]['mass_ratio'], 
                                                                                     1.0, post[event]['chi_eff']) 
             
+    with open('./o1o2o3_pe_prior_calculated.pkl', 'wb') as file:
+        pickle.dump(post, file)
 
-    dd.io.save('/projects/p31963/sharan/pop/o1o2o3_pe_prior_calculated.h5', post)
+    #dd.io.save('/projects/p31963/sharan/pop/o1o2o3_pe_prior_calculated.h5', post)
 
 
     return 
