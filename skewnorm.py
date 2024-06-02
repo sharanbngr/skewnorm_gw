@@ -115,16 +115,16 @@ def spinfit(runargs):
 
 
     if runargs['fit_chip']:
-        print('converting inj priors to chi_eff, chi_p ...')
-        injs['prior'] *= 4*injs['chieff_chip_prior']
+        print('new - converting inj priors to chi_eff, chi_p ...')
+        injs['prior'] *= 4*injs['chieff_chip_prior'] * (injs['a_1'] * injs['a_2'])**2
 
     else:
-        print('converting inj priors to chi_eff ...')
+        print('new - converting inj priors to chi_eff ...')
         try:
             injs.pop('chieff_chip_prior')
         except:
             pass
-        injs['prior'] *= 4*injs['chieff_prior']
+        injs['prior'] *= 4*injs['chieff_prior'] * (injs['a_1'] * injs['a_2'])**2
 
 
     priors = PriorDict(filename=runargs['priors'])
@@ -204,11 +204,11 @@ def spinfit(runargs):
             label = 'GWTC-3',
             sampler=runargs['sampler'],
             use_ratio=True,
-            num_warmup=15000,
-            num_samples=30000,
+            num_warmup=500,
+            num_samples=4000,
             check_point=True,
-            n_check_point=5000,
-            thinning=5,
+            n_check_point=250,
+            thinning=1,
             num_chains=1,
             outdir = runargs['outdir'])
 
