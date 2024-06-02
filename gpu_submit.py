@@ -16,9 +16,9 @@ if __name__ == "__main__":
         spin_model = config.get('model', 'spin_model')
         backend = config.get('params', 'backend')
         runidx = config.get('params', 'rundix')
+        sampler = config.get('params', 'sampler')
 
-
-        outdir = './' + spin_model + '_' + backend + '_' + runidx
+        outdir = './' + spin_model + '_' + sampler + '_' + backend + '_' + runidx
         configfile = sys.argv[1]
 
         # create directory and copy the config file
@@ -26,7 +26,7 @@ if __name__ == "__main__":
         os.system('cp '  + configfile  + ' ' + outdir + '/config.ini')
 
 
-        submitfile = file1 = open(outdir + '/submit.sh', 'w')
+        submitfile = open(outdir + '/submit.sh', 'w')
 
 
         submitfile.write('#!/bin/sh \n')
@@ -39,7 +39,7 @@ if __name__ == "__main__":
         submitfile.write('#SBATCH --mem=20G\n')
         submitfile.write('#SBATCH --gres=gpu:a100:1\n')
         submitfile.write('#SBATCH --nodes=1 \n')
-        submitfile.write('#SBATCH --ntasks-per-node=1\n')
+        submitfile.write('#SBATCH --ntasks-per-node=8\n')
         submitfile.write('\n')
         submitfile.write('mamba init\n')
         submitfile.write('mamba activate numpyro-test\n')

@@ -11,7 +11,7 @@ from gwpopulation.backend import set_backend
 import numpy as np
 from configparser import ConfigParser
 from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
-
+from mixture_models import *
 
 def get_model(models, backend):
     if type(models) not in (list, tuple):
@@ -20,73 +20,6 @@ def get_model(models, backend):
     return Model(
         [model() if type(model) is type else model for model in models]
     )
-
-
-def skewnorm_mixture_model(dataset, mu_al, sigma_al, eta_al, lam_al, sigma_dy):
-
-    '''
-    Mixture model combining an aligned and dynamic popualtion
-
-    Parameters
-    ----------
-    dataset: dict
-        Input data, must contain `chi_eff`
-    mu_al: float
-        Mean parameter of the aligned population
-    sigma_al: float
-        Scale parameter of the aligned population
-    eta_al: float
-        skewness parameter of the aligned population
-    lam_al: float
-        fraction of systems in the aligned population
-    sigma_dy: float
-        Scale parameter for the dynamic population (zero mean)
-
-    Returns
-    -------
-    array-like: The probability
-
-
-    '''
-
-    # Should be normalized because gaussian_chi_eff and skewnorm_chi_eff already are
-    pdf = (1 - lam_al) * gaussian_chi_eff(dataset, mu_chi_eff=0, sigma_chi_eff=sigma_dy) +  \
-            lam_al * skewnorm_chi_eff(dataset, mu_chi_eff=mu_al, sigma_chi_eff=sigma_al, eta_chi_eff=eta_al)
-
-    return pdf
-
-def eps_skewnorm_mixture_model(dataset, mu_al, sigma_al, eps_al, lam_al, sigma_dy):
-
-    '''
-    Mixture model combining an aligned and dynamic popualtion
-
-    Parameters
-    ----------
-    dataset: dict
-        Input data, must contain `chi_eff`
-    mu_al: float
-        Mean parameter of the aligned population
-    sigma_al: float
-        Scale parameter of the aligned population
-    eta_al: float
-        skewness parameter of the aligned population
-    lam_al: float
-        fraction of systems in the aligned population
-    sigma_dy: float
-        Scale parameter for the dynamic population (zero mean)
-
-    Returns
-    -------
-    array-like: The probability
-
-
-    '''
-
-    # Should be normalized because gaussian_chi_eff and skewnorm_chi_eff already are
-    pdf = (1 - lam_al) * gaussian_chi_eff(dataset, mu_chi_eff=0, sigma_chi_eff=sigma_dy) +  \
-            lam_al * eps_skewnorm_chi_eff(dataset, mu_chi_eff=mu_al, sigma_chi_eff=sigma_al, eps_chi_eff=eps_al)
-
-    return pdf
 
 
 def q_binning_skewnorm(dataset,
@@ -127,7 +60,7 @@ def spinfit(runargs):
 
     set_backend(backend=runargs['backend'])
 
-    runargs['outdir'] = './' + runargs['spin_model'] + '_' + runargs['backend'] + '_' + runargs['rundix']
+    runargs['outdir'] = './' + runargs['spin_model'] + '_' + runargs['sampler'] + '_' + runargs['backend'] + '_' + runargs['rundix']
 
 
     # create directory and copy the config file
@@ -141,6 +74,12 @@ def spinfit(runargs):
         post = pickle.load(f)
     #post = dd.io.load(runargs['pe_file'])
 
+    # this event is tooo massive. remove for now. 
+    try:
+        post.pop('S231020bw')
+    except:
+        print('S231020bw does not exist in this catalog')
+
     # get injections
     with open(runargs['inj_file'], 'rb') as f:
         injs = pickle.load(f)
@@ -149,6 +88,7 @@ def spinfit(runargs):
         injs[key] = xp.array(injs[key])
 
     posteriors = []
+
 
     ## do prior conversions
     if runargs['fit_chip']:
@@ -165,16 +105,26 @@ def spinfit(runargs):
         for event in post.keys():
             post[event]['prior'] *= 4.0 * post[event]['chieff_prior']
 
+ 
+            try:
+                post[event]  = post[event].drop(columns=['chieff_chip_prior'])               
+            except:
+                print('No chi_p prior column in ' + event)
+
             posteriors.append(post[event])
 
 
     if runargs['fit_chip']:
-        print('converting inj priors to chi_eff, chi_p ...')
-        injs['prior'] *= 4*injs['chieff_chip_prior']
+        print('new - converting inj priors to chi_eff, chi_p ...')
+        injs['prior'] *= 4*injs['chieff_chip_prior'] * (injs['a_1'] * injs['a_2'])**2
 
     else:
-        print('converting inj priors to chi_eff ...')
-        injs['prior'] *= 4*injs['chieff_prior']
+        print('new - converting inj priors to chi_eff ...')
+        try:
+            injs.pop('chieff_chip_prior')
+        except:
+            pass
+        injs['prior'] *= 4*injs['chieff_prior'] * (injs['a_1'] * injs['a_2'])**2
 
 
     priors = PriorDict(filename=runargs['priors'])
@@ -215,7 +165,7 @@ def spinfit(runargs):
         priors.pop('eps_al')
 
     elif runargs['spin_model'] == 'eps_skewnorm_mixture':
-        models.append(eps_kewnorm_mixture_model)
+        models.append(eps_skewnorm_mixture_model)
         priors.pop('eta_al')
 
     elif runargs['spin_model'] == 'qbinning_skewnorm':
@@ -236,27 +186,53 @@ def spinfit(runargs):
         priors.pop('rate')
 
     VTs = ResamplingVT(model=get_model(models,
-                                       runargs['backend']),
-                                       data=injs,
-                                         n_events=len(posteriors),
+                                        runargs['backend']),
+                                        data=injs,
+                                        n_events=len(posteriors),
                             marginalize_uncertainty=False,
                             enforce_convergence=True)
+
 
     likelihood = hyperlikelihood(posteriors = posteriors,
                                  hyper_prior = get_model(models, runargs['backend']),
                                  selection_function = VTs)
 
+    if runargs['sampler'] == 'numpyro':
+        result = bilby.run_sampler(likelihood = likelihood,
+            resume=True,
+            priors = priors,
+            label = 'GWTC-3',
+            sampler=runargs['sampler'],
+            use_ratio=True,
+            num_warmup=500,
+            num_samples=4000,
+            check_point=True,
+            n_check_point=250,
+            thinning=1,
+            num_chains=1,
+            outdir = runargs['outdir'])
 
-    if runargs['backend'] == 'jax':
-        jit_likelihood = JittedLikelihood(likelihood)
-
-
-    result = bilby.run_sampler(likelihood = jit_likelihood,
+    elif runargs['backend'] == 'jax' and runargs['sampler'] == 'dynesty':
+        jitted_likelihood = JittedLikelihood(likelihood)
+        result = bilby.run_sampler(likelihood = jitted_likelihood,
                     nlive=runargs['nlive'], resume=True,
                     priors = priors,
                     label = 'GWTC-3',
+                    sampler=runargs['sampler'],
+                    use_ratio=True,
                     check_point_delta_t = 300,
                     outdir = runargs['outdir'])
+        
+    elif runargs['sampler'] == 'dynesty':
+        result = bilby.run_sampler(likelihood = likelihood,
+            resume=True,
+            nlive=runargs['nlive'],
+            priors = priors,
+            label = 'GWTC-3',
+            sampler=runargs['sampler'],
+            use_ratio=True,
+            check_point_delta_t = 300,
+            outdir = runargs['outdir'])
 
     ## calculate rates in post-processing
     rates = list()
@@ -323,7 +299,7 @@ if __name__ == "__main__":
         runargs['fit_chip'] = bool(int(config.get('model', 'fit_chip')))
         runargs['fit_rate'] = bool(int(config.get('model', 'fit_rate')))
         runargs['backend'] = config.get('params', 'backend')
-
+        runargs['sampler'] = config.get('params', 'sampler')
         #if runargs['doqBinning']:
         #    runargs['qBins'] = json.loads(config.get('model', 'qBins'))
 

@@ -7,7 +7,7 @@ delta_m = Uniform(minimum=0.01, maximum=10, name='delta_m', latex_label='$\\delt
 lam = Uniform(minimum=0, maximum=1, name='lam', latex_label='$\\lambda_{peak}$')
 mpp = Uniform(minimum=20, maximum=50, name='mpp', latex_label='$\\mu_{peak}$')
 sigpp = Uniform(minimum=1, maximum=10, name='sigpp', latex_label='$\\sigma_{peak}$')
-mu_al = Uniform(minimum=-1, maximum=1, name='mu_al', latex_label='$\\mu_{al}$')
+mu_al = Uniform(minimum=-0.5, maximum=1, name='mu_al', latex_label='$\\mu_{al}$')
 sigma_al = LogUniform(minimum=0.01, maximum=4, name='sigma_al', latex_label='$\\sigma_{al}$')
 eta_al = Uniform(minimum=-20, maximum=20, name='eta_al', latex_label='$\\eta_{al}$')
 eps_al = Uniform(minimum=-1, maximum=1, name='eps_al', latex_label='$\\epsilon_{al}$')
