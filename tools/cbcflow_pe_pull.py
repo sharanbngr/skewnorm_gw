@@ -37,7 +37,7 @@ def construct_O4a_prelim_prior(data):
     if max(data["redshift"]) > z_max:
         z_max = max(data["redshift"])
 
-    zs = np.linspace(0, z_max * 1.01, 1000)
+    zs = np.linspace(0, z_max * 1.01, 10000)
 
     p_z = Planck15.differential_comoving_volume(zs).to(u.Gpc**3/u.sr) / (1 + zs)
 
@@ -65,8 +65,10 @@ o4pe = {}
 for sevent in library.superevents_in_library:
 
     #print('extracting info for ' + sevent)
-    most_likely_bns = ['S231030av', 'S230918aq', 'S230810af', 'S230524x']
-    msot_likely_nsbh = ['S230830b', 'S230715bw', 'S230627c', 'S230529ay', 'S230518h']
+    #most_likely_bns = ['S231030av', 'S230918aq', 'S230810af', 'S230524x']
+    #msot_likely_nsbh = ['S230830b', 'S230715bw', 'S230627c', 'S230529ay', 'S230518h']
+
+    exclude_list = ['S230520ae', 'S231123cg', 'S230522a','S230518h', 'S230529ay', 'S230802aq', 'S230830b', 'S230810af', 'S231020bw', 'S231112ag'   ]
 
     seventdata = cbcflow.get_superevent(sevent)
 
@@ -77,10 +79,9 @@ for sevent in library.superevents_in_library:
                 dontpullpe = True
                 print(sevent + ' has been retracted')
 
-    if sevent in most_likely_bns or sevent in msot_likely_nsbh:
+    if sevent in exclude_list:
         dontpullpe = True
-        print(sevent + ' most likely a BNS or an NSBH')
-
+        print(sevent + ' in exluce list')
 
     if not dontpullpe:
 
@@ -91,8 +92,8 @@ for sevent in library.superevents_in_library:
             if uevent['State'] == 'preferred':
                 snr = uevent['NetworkSNR']
 
-        if snr < 10 or far > 3.1688e-08:
-            print(sevent + ' does not pass the snr/far threshold')
+        if far > 3.1688e-08:
+            print(sevent + ' does not pass the far threshold')
         else:
             try:
                 illustrative = seventdata['ParameterEstimation']['IllustrativeResult']
@@ -103,30 +104,35 @@ for sevent in library.superevents_in_library:
 
             if illustrative_exists:
                 for pe in seventdata['ParameterEstimation']['Results']:
+
                     if pe['UID'].casefold() == illustrative.casefold():
 
                         pe_data = h5py.File(pe['ResultFile']['Path'][4:], 'r')
 
 
-                        df = {
-                            'mass_1': pe_data['posterior']['mass_1_source'][:],
-                            'mass_2': pe_data['posterior']['mass_2_source'][:],
-                            'mass_ratio': pe_data['posterior']['mass_ratio'][:],
-                            'redshift': pe_data['posterior']['redshift'][:],
-                            'a_1': pe_data['posterior']['a_1'][:],
-                            'a_2': pe_data['posterior']['a_2'][:],
-                            'cos_tilt_1': pe_data['posterior']['cos_tilt_1'][:],
-                            'cos_tilt_2': pe_data['posterior']['cos_tilt_2'][:],
-                            'chi_eff': pe_data['posterior']['chi_eff'][:],
-                            'chi_p': pe_data['posterior']['chi_p'][:],
-                            }
+                        if (pe_data['posterior']['mass_2_source'][:] > 3).sum() > 10:
+
+                            df = {
+                                'mass_1': pe_data['posterior']['mass_1_source'][:],
+                                'mass_2': pe_data['posterior']['mass_2_source'][:],
+                                'mass_ratio': pe_data['posterior']['mass_ratio'][:],
+                                'redshift': pe_data['posterior']['redshift'][:],
+                                'a_1': pe_data['posterior']['a_1'][:],
+                                'a_2': pe_data['posterior']['a_2'][:],
+                                'cos_tilt_1': pe_data['posterior']['cos_tilt_1'][:],
+                                'cos_tilt_2': pe_data['posterior']['cos_tilt_2'][:],
+                                'chi_eff': pe_data['posterior']['chi_eff'][:],
+                                'chi_p': pe_data['posterior']['chi_p'][:],
+                                }
 
 
-                        df = construct_O4a_prelim_prior(df)
-                        df = pd.DataFrame(data=df)
+                            df = construct_O4a_prelim_prior(df)
+                            df = pd.DataFrame(data=df)
 
-                        o4pe[sevent] = df
+                            o4pe[sevent] = df
 
+                        else:
+                            print('Not enough support in the BBH mass range for ' + sevent)
 
 
 
