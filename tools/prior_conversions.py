@@ -347,7 +347,6 @@ def convert_priors(pe_file='./GW_PE_samples.h5',
 
     print('calculating inj priors to chi_eff, chi_p ...')
 
-
     try:
         injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'])
 
@@ -366,14 +365,14 @@ def convert_priors(pe_file='./GW_PE_samples.h5',
 
 
 
-    #injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
-    #injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
+    injs['chieff_prior'] = chi_effective_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
+    injs['chieff_chip_prior'] = joint_prior_from_isotropic_spins(injs['mass_ratio'], 1.0, injs['chi_eff'], injs['chi_p']) / ((2 * np.pi * injs["a_1"]** 2) * (2 * np.pi * injs["a_2"]** 2))
 
     with open(inj_savefile, 'wb') as file:
         pickle.dump(injs, file)
 
 
-
+    '''
     with open(pe_file, 'rb') as f:
         post = pickle.load(f)
 
@@ -400,7 +399,7 @@ def convert_priors(pe_file='./GW_PE_samples.h5',
 
     with open(pe_savefile, 'wb') as file:
         pickle.dump(post, file)
-
+    '''
     #dd.io.save('/projects/p31963/sharan/pop/o1o2o3_pe_prior_calculated.h5', post)
 
 

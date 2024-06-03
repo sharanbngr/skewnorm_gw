@@ -14,7 +14,7 @@ def detected_injections(snr, snr_threshold):
 
 def get_o1o2o3o4_injs(snr_threshold):
 
-    injs = h5py.File('./rpo1234-cartesian_spins-semianalytic_o1_o2_o4a-real_o3.hdf', 'r')
+    injs = h5py.File('/home/rp.o4/offline-injections/mixtures/T2400110-v2/rpo1234-cartesian_spins-semianalytic_o1_o2_o4a-real_o3.hdf', 'r')
     savefile = './o1o2o3o4_prelim_injs_snr-' + str(snr_threshold) + '.pkl'
 
 
@@ -64,7 +64,7 @@ def get_o1o2o3o4_injs(snr_threshold):
 
     #jacobian_spin1 = 2 * np.pi * o1o2o3o4_injs['a_1']**2
     #jacobian_spin2 = 2 * np.pi * o1o2o3o4_injs['a_2']**2
-    o1o2o3o4_injs['prior'] *= jacobian_spin1 * jacobian_spin2 * o1o2o3o4_injs['mass_1']
+    o1o2o3o4_injs['prior'] *= o1o2o3o4_injs['mass_1'] / (o1o2o3o4_injs['a_1']**2 * o1o2o3o4_injs['a_2']**2)
 
     for key in o1o2o3o4_injs.keys():
         o1o2o3o4_injs[key] = o1o2o3o4_injs[key][detected_idx]
