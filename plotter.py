@@ -55,11 +55,11 @@ def plotter(rundir):
 
     chi_eff_arr = {'chi_eff':np.arange(-1, 1.01, 0.01)}
 
-    p_chi_effs = np.zeros((chi_eff_arr['chi_eff'].size, result.posterior['beta'].size))
+    p_chi_effs = np.zeros((chi_eff_arr['chi_eff'].size, result.posterior['alpha'].size))
 
 
     plt.grid(ls=':', lw=0.5)
-    for draw in range(result.posterior['beta'].size):
+    for draw in range(result.posterior['alpha'].size):
 
         p_chi_eff = spinplot(chi_eff_arr, result.posterior, draw)
 
@@ -72,8 +72,8 @@ def plotter(rundir):
     plt.plot(chi_eff_arr['chi_eff'], np.quantile(p_chi_effs, 0.95, axis=1), color='k', ls='--', lw=1.0)
     plt.plot(chi_eff_arr['chi_eff'], np.median(p_chi_effs, axis=1), label='median values', color='k', lw=1.5)
 
-    plt.xlim([-0.6, 0.6])
-    plt.ylim([0, 6])
+    plt.xlim([-0.75, 0.76])
+    plt.ylim([0, 8])
     plt.legend(frameon=False)
     plt.ylabel('$p(\\chi_{eff} )$')
     plt.xlabel('$\\chi_{eff}$')
@@ -81,7 +81,7 @@ def plotter(rundir):
     plt.close()
 
     dRdchi_effs = np.array(result.posterior['rate'])[None, :] * p_chi_effs
-    for draw in range(result.posterior['beta'].size):
+    for draw in range(result.posterior['alpha'].size):
         plt.plot(chi_eff_arr['chi_eff'], dRdchi_effs[:, draw],
                  color='cyan', alpha=0.05, lw=0.25)
 
@@ -104,10 +104,10 @@ def plotter(rundir):
         fig, (ax1, ax2) = plt.subplots(1, 2)
         fig.set_size_inches(8.0, 4.0)
 
-        #for draw in range(result.posterior['beta'].size):
+        #for draw in range(result.posterior['alpha'].size):
         for ii in range(500):
 
-            draw = np.random.randint(result.posterior['beta'].size)
+            draw = np.random.randint(result.posterior['alpha'].size)
 
 
             if result.posterior['lam_al'][draw] <= 0.5:
@@ -196,9 +196,9 @@ def plotter(rundir):
 
     m1_arr = {'mass_1':np.arange(1, 100, 0.5)}
 
-    p_m1s = np.zeros((m1_arr['mass_1'].size, result.posterior['beta'].size))
+    p_m1s = np.zeros((m1_arr['mass_1'].size, result.posterior['alpha'].size))
 
-    for draw in range(result.posterior['beta'].size):
+    for draw in range(result.posterior['alpha'].size):
 
         p_m1 = mass_pdf.p_m1(m1_arr, alpha=result.posterior['alpha'][draw],
                             mmax=result.posterior['mmax'][draw],
@@ -228,7 +228,7 @@ def plotter(rundir):
 
 
     dRdm1s = np.array(result.posterior['rate'])[None, :] * p_m1s
-    for draw in range(result.posterior['beta'].size):
+    for draw in range(result.posterior['alpha'].size):
         plt.plot(m1_arr['mass_1'], dRdm1s[:, draw],
                  color='cyan', alpha=0.05, lw=0.25)
 

@@ -13,6 +13,10 @@ from configparser import ConfigParser
 from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
 from mixture_models import *
 
+
+
+
+
 def get_model(models, backend):
     if type(models) not in (list, tuple):
         models = [models]
@@ -74,7 +78,7 @@ def spinfit(runargs):
         post = pickle.load(f)
     #post = dd.io.load(runargs['pe_file'])
 
-    # this event is tooo massive. remove for now. 
+    # this event is tooo massive. remove for now.
     try:
         post.pop('S231020bw')
     except:
@@ -105,9 +109,9 @@ def spinfit(runargs):
         for event in post.keys():
             post[event]['prior'] *= 4.0 * post[event]['chieff_prior']
 
- 
+
             try:
-                post[event]  = post[event].drop(columns=['chieff_chip_prior'])               
+                post[event]  = post[event].drop(columns=['chieff_chip_prior'])
             except:
                 print('No chi_p prior column in ' + event)
 
@@ -115,21 +119,34 @@ def spinfit(runargs):
 
 
     if runargs['fit_chip']:
-        print('new - converting inj priors to chi_eff, chi_p ...')
-        injs['prior'] *= 4*injs['chieff_chip_prior'] * (injs['a_1'] * injs['a_2'])**2
+        print('converting inj priors to chi_eff, chi_p ...')
+        #injs['prior'] *= 4*injs['chieff_chip_prior'] * (injs['a_1'] * injs['a_2'])**2
+        injs['prior'] *= 4*injs['chieff_chip_prior']
 
     else:
-        print('new - converting inj priors to chi_eff ...')
+        print('converting inj priors to chi_eff ...')
         try:
             injs.pop('chieff_chip_prior')
         except:
             pass
-        injs['prior'] *= 4*injs['chieff_prior'] * (injs['a_1'] * injs['a_2'])**2
+        #injs['prior'] *= 4*injs['chieff_prior'] * (injs['a_1'] * injs['a_2'])**2
+        injs['prior'] *= 4*injs['chieff_prior']
 
 
     priors = PriorDict(filename=runargs['priors'])
 
-    models = [SinglePeakSmoothedMassDistribution, PowerLawRedshift]
+    models = [PowerLawRedshift]
+
+    ## are we doing joint q-chi_eff mixture models?
+    if runargs['spin_model'] == 'q_skewnorm_mixture':
+        models.append(DoubleqPLP_skewnorm)
+        priors.pop('eps_al')
+    elif runargs['spin_model'] == 'q_eps_skewnorm_mixture':
+        models.append(DoubleqPLP_eps_skewnorm)
+        priors.pop('eta_al')
+    else:
+        models.append(SinglePeakSmoothedMassDistribution)
+
 
     if runargs['spin_model'] == 'skewnorm' and not runargs['fit_chip']:
         models.append(skewnorm_chi_eff)
@@ -190,12 +207,12 @@ def spinfit(runargs):
                                         data=injs,
                                         n_events=len(posteriors),
                             marginalize_uncertainty=False,
-                            enforce_convergence=True)
+                            enforce_convergence=False)
 
 
     likelihood = hyperlikelihood(posteriors = posteriors,
                                  hyper_prior = get_model(models, runargs['backend']),
-                                 selection_function = VTs)
+                                 selection_function = VTs, maximum_uncertainty=1)
 
     if runargs['sampler'] == 'numpyro':
         result = bilby.run_sampler(likelihood = likelihood,
@@ -222,7 +239,7 @@ def spinfit(runargs):
                     use_ratio=True,
                     check_point_delta_t = 300,
                     outdir = runargs['outdir'])
-        
+
     elif runargs['sampler'] == 'dynesty':
         result = bilby.run_sampler(likelihood = likelihood,
             resume=True,
