@@ -1,63 +1,121 @@
-from gwpopulation.utils import skewnorm
-from gwpopulation.models.spin import skewnorm_chi_eff
+import sys
 import numpy as np
-import pickle
+from bilby.core.result import read_in_result
+from gwpopulation.models.spin import gaussian_chi_eff, skewnorm_chi_eff, eps_skewnorm_chi_eff
 import matplotlib.pyplot as plt
+from gwpopulation.models.mass import SinglePeakSmoothedMassDistribution
+
+def spinplot(chi_eff_arr, posterior, draw):
+
+    if 'eta_chi_eff' in posterior.keys():
+        p_chi_eff = skewnorm_chi_eff(chi_eff_arr,
+                            mu_chi_eff=posterior['mu_chi_eff'][draw],
+                            sigma_chi_eff= posterior['sigma_chi_eff'][draw],
+                            eta_chi_eff=posterior['eta_chi_eff'][draw],)
+
+    elif 'eps_chi_eff' in posterior.keys():
+        p_chi_eff = eps_skewnorm_chi_eff(chi_eff_arr,
+                                         mu_chi_eff=posterior['mu_chi_eff'][draw],
+                                         sigma_chi_eff=posterior['sigma_chi_eff'][draw],
+                                         eps_chi_eff=posterior['eps_chi_eff'][draw])
 
 
-mu_x = 0
-log_sig_xs = [-4, -1.5, 0]
+    else:
+        # defaulting to a truncated normal model
+        p_chi_eff = skewnorm_chi_eff(chi_eff_arr,
+                            mu_chi_eff=posterior['mu_chi_eff'][draw],
+                            sigma_chi_eff= posterior['sigma_chi_eff'][draw],
+                            eta_chi_eff=0,)
 
-
-chi_eff_arr = {'chi_eff':np.arange(-1, 1.0001, 0.0001)}
-eta_x_arr = np.arange(0, 100.1, 0.1)
-
-
-## loading injections. 
-with open('/projects/p31963/sharan/pop/O3_injections.pkl', 'rb') as f:
-    injs = pickle.load(f)
-
-#### need to calc chi_eff for injs
-injs['chi_eff'] = (injs['mass_1']*injs['a_1']*injs['cos_tilt_1'] + injs['mass_2']*injs['a_2']*injs['cos_tilt_2'] ) / (injs['mass_1'] + injs['mass_2'])
-
-
-
-
-for log_sig_x in log_sig_xs:
-
-    num_injs = []
-
-    for eta_x in eta_x_arr:
-
-        pdf = skewnorm_chi_eff(chi_eff_arr, mu_x, np.exp(log_sig_x), eta_x)
-        
-        #max value of the pdf
-        max_pdf = np.amax(pdf)
-        max_idx = np.where(pdf == max_pdf)[0][0] + 1
-
-        chi_015 = np.interp(0.16*max_pdf, pdf[:max_idx], chi_eff_arr['chi_eff'][:max_idx])
-        chi_086 = np.interp(0.84*max_pdf, pdf[:max_idx], chi_eff_arr['chi_eff'][:max_idx])
-
-
-        try:
-            num_inj = np.logical_and(injs['chi_eff'] >= chi_015, injs['chi_eff'] <= chi_086).sum()
-        except:
-            import pdb; pdb.set_trace()
-
-        num_injs.append(num_inj)
+    return p_chi_eff
 
 
 
-    # make plot
-    plt.plot(eta_x_arr, np.array(num_injs), label='$\\log \\sigma_{\\chi} = $' + str(log_sig_x), lw='1.0')
 
 
-plt.axhline(500, ls='-.', color='k', lw=1)
-plt.grid(ls='--', lw=0.5)
-plt.legend(frameon=False)
-plt.xlabel('$\\eta_{\\chi}$')
-plt.ylabel('Number of injections covering 1-sigma of the asymmetric rise')
-plt.yscale('log')
-plt.tight_layout()
-plt.savefig('asymmetry_limits.png', dpi=300)
-import pdb; pdb.set_trace()
+def limits(rundir):
+
+    result = read_in_result(rundir + '/GWTC-3_result.json')
+
+    chi_eff_arr = {'chi_eff':np.arange(-1, 1.001, 0.001)}
+
+    p_chi_effs = np.zeros((chi_eff_arr['chi_eff'].size, result.posterior['alpha'].size))
+
+
+    for draw in range(result.posterior['alpha'].size):
+
+        p_chi_effs[:, draw] = spinplot(chi_eff_arr, result.posterior, draw)
+
+
+    del_chi = chi_eff_arr['chi_eff'][1] - chi_eff_arr['chi_eff'][0]
+
+    import pdb; pdb.set_trace()
+    # asymmetry about zero
+    central_asymmetry = np.sum(del_chi * p_chi_effs[chi_eff_arr['chi_eff'] > 0] , axis=0) -\
+            np.sum(del_chi * p_chi_effs[chi_eff_arr['chi_eff'] <= 0] , axis=0)
+
+
+    negative_wt = np.sum(del_chi * p_chi_effs[chi_eff_arr['chi_eff'] <= 0] , axis=0)
+
+
+    q5, q10, median, q95 = np.quantile(central_asymmetry, [0.05, 0.1, 0.5, 0.95])
+
+
+    with open(f"{rundir}/limits.txt", "w") as file:
+        file.write(f"The 90\% lower limit on asymmetry about zero is {q10:.2f} \n")
+        file.write(f"Median asymmetry about zero is {median:.2f}^{q95-median:.2f}_{median-q5:.2f} \n")
+        file.write(f"The probability mass at chi_eff <0 is at least {np.quantile(negative_wt, 0.1):.2f} \n")
+
+    if 'eps_chi_eff' in result.posterior.keys():
+        mode = np.array(result.posterior['mu_chi_eff'])
+
+        high_index = chi_eff_arr['chi_eff'][:, None] > mode[None, :]
+        low_index = chi_eff_arr['chi_eff'][:, None] <= mode[None, :]
+
+        modal_asymmetry = np.sum(del_chi*p_chi_effs[high_index], axis=0) - np.sum(del_chi*p_chi_effs[low_index], axis=0)
+
+        q5_modal, q10_modal, median_modal, q95_modal = np.quantile(central_asymmetry, [0.05, 0.1, 0.5, 0.95])
+
+        with open(f"{rundir}/limits.txt", "a") as file:
+            file.write(f"The 90\% lower limit on asymmetry about the model is {q10_modal:.2f} \n")
+            file.write(f"Median asymmetry about the mode is {median_modal:.2f}^{q95_modal-median_modal:.2f}_{median_modal-q5_modal:.2f} \n")
+
+
+    elif 'eta_chi_eff' in result.posterior.keys():
+
+        eta = result.posterior['eta_chi_eff']
+        b = np.sqrt(2/np.pi)
+        delta = np.array(eta / np.sqrt(1 + eta**2))
+
+        mu_z = b*delta
+        sigma_z = np.sqrt(1 - mu_z**2)
+        gamma_1  = (2  - np.pi/2) * (mu_z / sigma_z)**3
+
+
+        mode = np.array( mu_z -\
+                0.5 * gamma_1 * sigma_z -\
+                0.5 * np.sign(eta) * np.exp(- 2*np.pi/np.abs(eta)) )
+
+
+        high_index = chi_eff_arr['chi_eff'][:, None] > mode[None, :]
+        low_index = chi_eff_arr['chi_eff'][:, None] <= mode[None, :]
+
+        modal_asymmetry = np.sum(del_chi*p_chi_effs[high_index], axis=0) - np.sum(del_chi*p_chi_effs[low_index], axis=0)
+
+        q5_modal, q10_modal, median_modal, q95_modal = np.quantile(central_asymmetry, [0.05, 0.1, 0.5, 0.95])
+
+        with open(f"{rundir}/limits.txt", "a") as file:
+            file.write(f"The 90\% lower limit on asymmetry about the model is {q10_modal:.2f} \n")
+            file.write(f"Median asymmetry about the mode is {median_modal:.2f}^{q95_modal-median_modal:.2f}_{median_modal-q5_modal:.2f} \n")
+
+
+
+
+if __name__ == "__main__":
+
+    if len(sys.argv) != 2:
+        raise ValueError('Provide the path to the run directory')
+    else:
+        limits(sys.argv[1])
+
+
