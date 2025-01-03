@@ -1,4 +1,9 @@
 import sys, os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['NPROC'] = '1'
+
+
 from gwpopulation.models.mass import SinglePeakSmoothedMassDistribution
 from gwpopulation.models.redshift import PowerLawRedshift
 from gwpopulation.models.spin import gaussian_chi_eff, skewnorm_chi_eff, gaussian_chi_p, eps_skewnorm_chi_eff
@@ -10,9 +15,12 @@ from bilby.core.prior import PriorDict
 from gwpopulation.backend import set_backend
 import numpy as np
 from configparser import ConfigParser
+from get_o4a_data import load_posteriors, load_injections
+
+import jax
+jax.config.update('jax_enable_x64', True)
 from gwpopulation.experimental.jax import NonCachingModel, JittedLikelihood
 from mixture_models import *
-
 
 
 
@@ -25,29 +33,6 @@ def get_model(models, backend):
         [model() if type(model) is type else model for model in models]
     )
 
-
-def q_binning_skewnorm(dataset,
-                       mu1, sigma1, eta1,
-                       mu2, sigma2, eta2):
-
-
-    pdf = xp.where(dataset['mass_ratio'] >= 0.8,
-                   skewnorm_chi_eff(dataset, mu_chi_eff=mu1, sigma_chi_eff=sigma1, eta_chi_eff=eta1),
-                   skewnorm_chi_eff(dataset, mu_chi_eff=mu2, sigma_chi_eff=sigma2, eta_chi_eff=eta2),)
-
-    return pdf
-
-
-def q_binning_eps_skewnorm(dataset,
-                       mu1, sigma1, eps1,
-                       mu2, sigma2, eps2):
-
-
-    pdf = xp.where(dataset['mass_ratio'] >= 0.8,
-                   eps_skewnorm_chi_eff(dataset, mu_chi_eff=mu1, sigma_chi_eff=sigma1, eps_chi_eff=eps1),
-                   eps_skewnorm_chi_eff(dataset, mu_chi_eff=mu2, sigma_chi_eff=sigma2, eps_chi_eff=eps2),)
-
-    return pdf
 
 
 def spinfit(runargs):
@@ -73,64 +58,36 @@ def spinfit(runargs):
 
 
 
-    # extract posterior
-    with open(runargs['pe_file'], 'rb') as f:
-        post = pickle.load(f)
-    #post = dd.io.load(runargs['pe_file'])
+    print('loading posteriors...')
+    posteriors, events = load_posteriors(exclude=['GW200129_065458', 'GW231123_135430'])
 
-    # this event is tooo massive. remove for now.
-    try:
-        post.pop('S231020bw')
-    except:
-        print('S231020bw does not exist in this catalog')
+    nmin = int(3e3)
 
-    # get injections
-    with open(runargs['inj_file'], 'rb') as f:
-        injs = pickle.load(f)
+    for ii in range(len(events)):
+        post = posteriors[ii]
+        if post.shape[0] < nmin:
+            import pdb; pdb.set_trace()
+        else:
+            post = post.sample(n=nmin, axis=0)
 
-    for key in injs.keys():
+
+    print('loading injections...')
+    injs = load_injections()
+    for key in injs:
         injs[key] = xp.array(injs[key])
-
-    posteriors = []
-
 
     ## do prior conversions
     if runargs['fit_chip']:
 
         print('converting PE priors to chi_eff, chi_p ...')
-        for event in post.keys():
+        for post in posteriors:
+            post['prior'] = post['prior_effective_spin']
+            post['mass_1'] = post['mass_1_source']
 
-            post[event]['prior'] *= 4.0 * post[event]['chieff_chip_prior']
-
-            posteriors.append(post[event])
-
-    else:
-        print('converting PE priors to chi_eff ...')
-        for event in post.keys():
-            post[event]['prior'] *= 4.0 * post[event]['chieff_prior']
-
-
-            try:
-                post[event]  = post[event].drop(columns=['chieff_chip_prior'])
-            except:
-                print('No chi_p prior column in ' + event)
-
-            posteriors.append(post[event])
-
-
-    if runargs['fit_chip']:
         print('converting inj priors to chi_eff, chi_p ...')
         #injs['prior'] *= 4*injs['chieff_chip_prior'] * (injs['a_1'] * injs['a_2'])**2
-        injs['prior'] *= 4*injs['chieff_chip_prior']
-
-    else:
-        print('converting inj priors to chi_eff ...')
-        try:
-            injs.pop('chieff_chip_prior')
-        except:
-            pass
-        #injs['prior'] *= 4*injs['chieff_prior'] * (injs['a_1'] * injs['a_2'])**2
-        injs['prior'] *= 4*injs['chieff_prior']
+        injs['prior'] = injs['prior_effective_spin']
+        injs['mass_1'] = injs['mass_1_source']
 
 
     priors = PriorDict(filename=runargs['priors'])
@@ -238,7 +195,9 @@ def spinfit(runargs):
                     sampler=runargs['sampler'],
                     use_ratio=True,
                     check_point_delta_t = 300,
-                    outdir = runargs['outdir'])
+                    outdir = runargs['outdir'],
+                    sample = 'acceptance-walk',
+                    naccept = 10,)
 
     elif runargs['sampler'] == 'dynesty':
         result = bilby.run_sampler(likelihood = likelihood,
@@ -249,7 +208,9 @@ def spinfit(runargs):
             sampler=runargs['sampler'],
             use_ratio=True,
             check_point_delta_t = 300,
-            outdir = runargs['outdir'])
+            outdir = runargs['outdir'],)
+            #sample = 'acceptance-walk',
+            #naccept = 10,)
 
     ## calculate rates in post-processing
     rates = list()
@@ -320,8 +281,8 @@ if __name__ == "__main__":
         #if runargs['doqBinning']:
         #    runargs['qBins'] = json.loads(config.get('model', 'qBins'))
 
-        runargs['pe_file'] = config.get('params', 'pe_file')
-        runargs['inj_file'] = config.get('params', 'inj_file')
+        #runargs['pe_file'] = config.get('params', 'pe_file')
+        #runargs['inj_file'] = config.get('params', 'inj_file')
         runargs['nlive'] = int(config.get('params', 'nlive'))
         runargs['dlogz'] = float(config.get('params', 'dlogz'))
         runargs['rundix'] = config.get('params', 'rundix')
